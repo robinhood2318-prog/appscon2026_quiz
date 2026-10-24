@@ -1,0 +1,32 @@
+# APPSCON 2026 – Rapid fire buzzer (4 teams, phones)
+
+Same setup as the e-Souvenir unveil: GitHub Pages + the HiveMQ relay. Its own private topic, so it cannot clash with the unveil.
+
+## Put it online
+1. In the existing GitHub repository, choose **Add file → Upload files** and drag in the whole `quiz` folder (index.html, host.html, buzzer.html, config.js, relay.js, README.md). Commit.
+2. After about a minute open `https://robinhood2318-prog.github.io/<repository>/quiz/`.
+
+## On the day
+- **Auditorium laptop:** open `quiz/host.html` in Chrome or Edge. Press **P** for the control panel, type the four team names, then **F** for full screen. Open it on this one laptop only.
+- **Phones (one per team, a second phone per team is fine as a spare):** press **J** on the laptop to show four QR codes. Each team scans its own code. The tile on the screen turns to “Phone ready” with the delay in ms.
+- Phones can be on the institute Wi-Fi or on mobile data; they do not need to share the laptop’s network. Click once anywhere on the laptop page before the round so the browser allows sound.
+
+## Running a question
+| Key | What it does |
+|---|---|
+| Space | Open buzzers for the next question (press again to lock) |
+| C | Correct: adds points, locks buzzers |
+| W | Wrong: deducts points, passes to the next team in line |
+| N | Pass to the next team in line, no points |
+| 1–4 | Buzz for a team from the laptop keyboard (backup if a phone fails) |
+| U | Undo last score |
+| T / Y | Start or pause the round clock / reset it (buzzers lock at zero) |
+| J / P / F | Join codes / control panel / full screen |
+
+Defaults (change in the panel): +10 correct, −5 wrong, 5 s to answer after a buzz, 60 s round clock, 400 ms tie window. Scores and names survive a page refresh.
+
+## How it stays fair
+Every phone keeps measuring its delay to the laptop and works out the laptop’s clock. When a team taps, the phone stamps the press in the laptop’s time, so a team on a slower connection is not penalised. The laptop waits 400 ms after the first buzz to collect near-simultaneous taps, then ranks them by press time and shows the gaps (e.g. “+0.04 s”).
+
+## Rehearse
+Do one run on the institute Wi-Fi with four phones before the quiz. If the laptop loses internet, the bottom-left of the screen says so; it reconnects by itself, and keys 1–4 still let you run the round by ear.
