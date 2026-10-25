@@ -18,14 +18,17 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 body { display: grid; grid-template-rows: auto 1fr auto; }
 body.fs:not(.panel-open) { cursor: none; }
 
-.bar { display: flex; align-items: baseline; justify-content: space-between; gap: 2vw; padding: 2.4vh 3vw 0; }
-.event { display: flex; align-items: baseline; gap: 1.2vw; }
-.ev1 { font-weight: 800; font-size: 2.3vw; }
-.ev2 { color: var(--muted); font-size: 1.8vw; }
+.bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 2vw; padding: 2.4vh 3vw 0; }
+.event { text-align: center; }
+.ev1 { display: block; font-weight: 800; font-size: 2.8vw; line-height: 1.15; }
+.ev2 { display: block; color: var(--muted); font-size: 2.1vw; font-weight: 600; margin-top: .4vh; }
+.qno { justify-self: start; }
+.clock { justify-self: end; }
 .qno { font-size: 1.9vw; color: var(--muted); }
 .clock { font-size: 5vw; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
 .clock.idle { color: var(--muted); }
 .clock.low { color: var(--alert); }
+.clock[hidden] { display: block; visibility: hidden; }
 
 .stage { display: grid; place-items: center; }
 .status { font-size: 9vw; font-weight: 800; letter-spacing: -0.03em; line-height: 1; text-align: center; padding: 0 3vw; }
@@ -96,13 +99,17 @@ body.fs:not(.panel-open) { cursor: none; }
 .conn.bad { color: var(--alert); font-weight: 600; }
 .conn.ok:not(.show) { display: none; }
 
+.start { position: fixed; inset: 0; z-index: 20; background: var(--bg); display: grid; place-items: center; text-align: center; cursor: pointer; }
+.start[hidden] { display: none; }
+.start b { display: block; font-size: 4vw; font-weight: 800; }
+.start span { display: block; margin-top: 1.5vh; font-size: 1.6vw; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .flood.pop { animation: none; } }
 </style>
 </head>
 <body>
 <header class="bar">
-  <div class="event"><span class="ev1">APPSCON 2026</span><span class="ev2">Rapid fire round</span></div>
   <div class="qno" id="qno">Ready</div>
+  <div class="event"><span class="ev1">APPSCON 2026 – Quiz competition</span><span class="ev2">Buzzer round</span></div>
   <div class="clock idle" id="clock">1:00</div>
 </header>
 <main class="stage"><div class="status" id="status" data-phase="locked">Get ready</div></main>
@@ -137,7 +144,7 @@ body.fs:not(.panel-open) { cursor: none; }
   <label>Points for a correct answer <input type="number" id="sCorrect"></label>
   <label>Points for a wrong answer <input type="number" id="sWrong"></label>
   <label>Answer time after a buzz (s, 0 = off) <input type="number" id="sAnswer" min="0"></label>
-  <label>Round clock (s) <input type="number" id="sRound" min="0"></label>
+  <label>Round clock (s, 0 = hidden) <input type="number" id="sRound" min="0"></label>
   <label>Tie window (ms) <input type="number" id="sTie" min="100" max="1500" step="50"></label>
   <h3>Keys</h3>
   <dl class="keys">
@@ -147,26 +154,27 @@ body.fs:not(.panel-open) { cursor: none; }
     <dt>N</dt><dd>Pass to the next team in line, no points</dd>
     <dt>1–4</dt><dd>Buzz for a team from this keyboard (if a phone fails)</dd>
     <dt>U</dt><dd>Undo the last score</dd>
-    <dt>T / Y</dt><dd>Start or pause the round clock / reset it</dd>
+    <dt>T / Y</dt><dd>Start or pause the round clock / reset it (only when a round clock is set)</dd>
     <dt>J</dt><dd>Show or hide the join codes</dd>
     <dt>F</dt><dd>Full screen</dd>
     <dt>P</dt><dd>Show or hide this panel</dd>
   </dl>
 </aside>
 <div class="conn" id="conn">Connecting…</div>
+<div class="start" id="start"><div><b>Click anywhere to start</b><span>The quiz screen opens in full screen</span></div></div>
 
 <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="config.js?v=1"></script>
+<script src="config.js?v=4"></script>
 <script src="relay.js?v=1"></script>
 <script>
 (() => {
   'use strict';
   const C = window.QUIZ;
   const $ = s => document.querySelector(s);
-  const KEY = 'appscon-quiz-buzzer-v1';
+  const KEY = 'appscon-quiz-buzzer-v2';
   const DEF = { names: C.teams.map(t => t.name), scores: [0, 0, 0, 0], q: 0,
-                correct: 10, wrong: -5, answerSec: 5, roundSec: 60, tieMs: 400 };
+                correct: 10, wrong: -5, answerSec: 5, roundSec: 0, tieMs: 400 };
   let cfg;
   try { cfg = Object.assign({}, DEF, JSON.parse(localStorage.getItem(KEY) || '{}')); }
   catch (e) { cfg = Object.assign({}, DEF); }
@@ -188,6 +196,7 @@ body.fs:not(.panel-open) { cursor: none; }
   function ac() {
     if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
     if (AC && AC.state === 'suspended') AC.resume();
+    preloadBuzzSound(AC);
     return AC;
   }
   function tone(freq, dur, type, vol, when) {
@@ -200,8 +209,7 @@ body.fs:not(.panel-open) { cursor: none; }
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur + 0.03);
   }
-  const PITCH = [440, 523, 659, 784];
-  const sBuzz = i => { tone(PITCH[i], 0.18, 'square', 0.22); tone(PITCH[i] * 1.5, 0.3, 'square', 0.16, 0.12); };
+  const sBuzz = i => playTeamSound(ac(), i, 0.3);
   const sOpen = () => { tone(880, 0.08, 'sine', 0.22); tone(1320, 0.14, 'sine', 0.22, 0.09); };
   const sCorrect = () => { tone(660, 0.1, 'triangle', 0.25); tone(880, 0.1, 'triangle', 0.25, 0.1); tone(1100, 0.25, 'triangle', 0.25, 0.2); };
   const sWrong = () => tone(160, 0.4, 'square', 0.2);
@@ -327,6 +335,7 @@ body.fs:not(.panel-open) { cursor: none; }
   /* ---------- round clock ---------- */
   let clockLeft = cfg.roundSec, clockRun = false, clockT = null, clockEnd = 0;
   function clockToggle() {
+    if (!cfg.roundSec) return;
     if (clockRun) {
       clockLeft = Math.max(0, Math.ceil((clockEnd - Date.now()) / 1000));
       clockRun = false; clearInterval(clockT);
@@ -350,6 +359,7 @@ body.fs:not(.panel-open) { cursor: none; }
   function clockReset() { clearInterval(clockT); clockRun = false; clockLeft = cfg.roundSec; renderClock(); }
   function renderClock() {
     const el = $('#clock');
+    el.hidden = !cfg.roundSec;
     el.textContent = Math.floor(clockLeft / 60) + ':' + String(clockLeft % 60).padStart(2, '0');
     el.classList.toggle('idle', !clockRun && clockLeft > 0);
     el.classList.toggle('low', clockLeft <= 10);
@@ -480,10 +490,16 @@ body.fs:not(.panel-open) { cursor: none; }
   num('#sCorrect', 'correct'); num('#sWrong', 'wrong');
   num('#sAnswer', 'answerSec', 0, 120); num('#sRound', 'roundSec', 0, 3600); num('#sTie', 'tieMs', 100, 1500);
 
-  function fullscreen() {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => {});
+  /* Full screen: browsers only allow it after a click or key press, so the page
+     goes full screen on the first click, and again on any later click or key
+     if someone presses Esc. */
+  function enterFs() {
+    if (document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+    document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
   }
+  function fullscreen() { if (document.fullscreenElement) document.exitFullscreen(); else enterFs(); }
+  let keepFs = true;
+  $('#start').addEventListener('click', () => { ac(); $('#start').hidden = true; enterFs(); });
   document.addEventListener('fullscreenchange', () => document.body.classList.toggle('fs', !!document.fullscreenElement));
 
   $('#bToggle').addEventListener('click', e => { ac(); toggle(); e.target.blur(); });
@@ -496,10 +512,14 @@ body.fs:not(.panel-open) { cursor: none; }
     lock(); S.order = []; S.cur = 0; S.results = {}; render(); renderPanel(); publishState();
   });
 
-  document.addEventListener('pointerdown', ac);
+  document.addEventListener('pointerdown', e => {
+    ac();
+    if (keepFs && !(e.target.closest && e.target.closest('.panel'))) enterFs();
+  });
   document.addEventListener('keydown', e => {
     ac();
     if (e.target && e.target.matches && e.target.matches('input, textarea, select')) { if (e.key === 'Escape') e.target.blur(); return; }
+    if (keepFs && e.key !== 'Escape' && e.key.toLowerCase() !== 'f') { $('#start').hidden = true; enterFs(); }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (k === ' ') { e.preventDefault(); toggle(); }
@@ -512,7 +532,7 @@ body.fs:not(.panel-open) { cursor: none; }
     else if (k === 'y') clockReset();
     else if (k === 'j') toggleJoin();
     else if (k === 'p') togglePanel();
-    else if (k === 'f') fullscreen();
+    else if (k === 'f') { keepFs = !document.fullscreenElement; fullscreen(); }
     else if (k === 'escape') { toggleJoin(false); togglePanel(false); }
   });
 

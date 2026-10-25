@@ -42,6 +42,7 @@ main { flex: 1; display: flex; flex-direction: column; align-items: center; just
 
 footer { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted); }
 #net.off { color: #FF7A7A; font-weight: 600; }
+#test { font: inherit; font-size: 14px; font-weight: 600; color: var(--text); background: var(--surface); border: 0; border-radius: 999px; padding: 6px 14px; }
 
 #picker { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
 #picker[hidden], #play[hidden] { display: none; }
@@ -67,11 +68,11 @@ footer { display: flex; justify-content: space-between; gap: 12px; font-size: 13
     <p id="state">Connecting…</p>
     <p id="sub"></p>
   </main>
-  <footer><span id="net">Connecting</span><span>APPSCON 2026 quiz</span></footer>
+  <footer><span id="net">Connecting</span><button id="test" type="button">Test sound</button></footer>
 </div>
 
 <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
-<script src="config.js?v=1"></script>
+<script src="config.js?v=4"></script>
 <script src="relay.js?v=1"></script>
 <script>
 (() => {
@@ -156,6 +157,7 @@ footer { display: flex; justify-content: space-between; gap: 12px; font-size: 13
     const payload = { cid: R.cid, team, q: S.q, t: Math.round(Date.now() + offset), rtt: bestRtt };
     myBuzz = { q: S.q, payload, tries: 1 };
     R.send('buzz', payload);
+    playTeamSound(audio(), me, 0.35);
     if (navigator.vibrate) navigator.vibrate(60);
     render(); retry();
   }
@@ -165,6 +167,18 @@ footer { display: flex; justify-content: space-between; gap: 12px; font-size: 13
       myBuzz.tries++; R.send('buzz', myBuzz.payload); retry();
     }, 1200);
   }
+
+  /* ---------- sound ---------- */
+  let AC = null;
+  function audio() {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {} // iPhone: play even on silent
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    if (AC && AC.state === 'suspended') AC.resume();
+    preloadBuzzSound(AC);
+    return AC;
+  }
+  document.addEventListener('pointerdown', audio);
+  $('#test').addEventListener('click', () => playTeamSound(audio(), me, 0.35));
 
   const btn = $('#buzz');
   btn.addEventListener('pointerdown', press);
